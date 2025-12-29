@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Expense Assistant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 50%, #1e1b4b 100%);
+        }
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .glass-darker {
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .glow {
+            box-shadow: 0 0 30px rgba(59, 130, 246, 0.3);
+        }
+        .glow-green {
+            box-shadow: 0 0 20px rgba(34, 197, 94, 0.4);
+        }
+        .expense-card {
+            animation: slideIn 0.3s ease-out;
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .loading {
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .tab-active {
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+        }
+    </style>
+</head>
+<body class="gradient-bg min-h-screen text-white">
+    <!-- Header -->
+    <header class="glass border-b border-white/10">
+        <div class="max-w-6xl mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                        <i class="fas fa-receipt text-lg"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-bold">AI Expense Assistant</h1>
+                        <p class="text-xs text-gray-400">Multi-language • OCR • Analytics</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 text-sm text-gray-400">
+                    <span class="px-2 py-1 rounded-full bg-green-500/20 text-green-400 text-xs">
+                        <i class="fas fa-circle text-[8px] mr-1"></i>Connected
+                    </span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-6 py-8">
+        <!-- Tabs -->
+        <div class="flex gap-2 mb-8">
+            <button onclick="switchTab('extract')" id="tab-extract" class="tab-active px-5 py-2.5 rounded-xl font-medium transition-all">
+                <i class="fas fa-magic mr-2"></i>Extract
+            </button>
+            <button onclick="switchTab('multi')" id="tab-multi" class="glass px-5 py-2.5 rounded-xl font-medium hover:bg-white/10 transition-all">
+                <i class="fas fa-layer-group mr-2"></i>Multi-Extract
+            </button>
+            <button onclick="switchTab('ocr')" id="tab-ocr" class="glass px-5 py-2.5 rounded-xl font-medium hover:bg-white/10 transition-all">
+                <i class="fas fa-camera mr-2"></i>OCR
+            </button>
+            <button onclick="switchTab('analytics')" id="tab-analytics" class="glass px-5 py-2.5 rounded-xl font-medium hover:bg-white/10 transition-all">
+                <i class="fas fa-chart-pie mr-2"></i>Analytics
+            </button>
+        </div>
+
+        <div class="grid lg:grid-cols-2 gap-8">
+            <!-- Input Panel -->
+            <div class="glass rounded-2xl p-6">
+                <!-- Single Extract -->
+                <div id="panel-extract" class="panel">
+                    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <i class="fas fa-pen text-blue-400"></i>
+                        Enter Expense Description
+                    </h2>
+                    <textarea 
+                        id="input-text" 
+                        class="w-full h-32 bg-black/30 rounded-xl p-4 text-white placeholder-gray-500 border border-white/10 focus:border-blue-500 focus:outline-none resize-none"
+                        placeholder="e.g., I paid 50dh for taxi this morning&#10;&#10;Or in Darija: khlsst 20dh f taxi w 35dh f sandwich"
+                    ></textarea>
+                    
+                    <div class="mt-4 grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="text-sm text-gray-400 mb-1 block">Expense Type (optional)</label>
+                            <select id="expense-type" class="w-full bg-black/30 rounded-lg p-2.5 border border-white/10 focus:outline-none">
+                                <option value="">Auto-detect</option>
+                                <option value="transport">Transport</option>
+                                <option value="food">Food</option>
+                                <option value="utilities">Utilities</option>
+                                <option value="rent">Rent</option>
+                                <option value="entertainment">Entertainment</option>
+                                <option value="shopping">Shopping</option>
+                                <option value="health">Health</option>
+                                <option value="education">Education</option>
+                                <option value="travel">Travel</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-sm text-gray-400 mb-1 block">Language (optional)</label>
+                            <select id="language" class="w-full bg-black/30 rounded-lg p-2.5 border border-white/10 focus:outline-none">
+                                <option value="">Auto-detect</option>
+                                <option value="en">English</option>
+                                <option value="fr">French</option>
+                                <option value="de">Deutsch</option>
+                                <option value="ar">Arabic</option>
+                                <option value="darija">Darija</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button onclick="extractSingle()" class="mt-6 w-full py-3 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 font-semibold hover:opacity-90 transition-all flex items-center justify-center gap-2">
+                        <i class="fas fa-bolt"></i>
+                        Extract Expense
+                    </button>
+                </div>
+
+                <!-- Multi Extract -->
+                <div id="panel-multi" class="panel hidden">
+                    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <i class="fas fa-list text-purple-400"></i>
+                        Multiple Expenses in One Text
+                    </h2>
+                    <textarea 
+                        id="multi-text" 
+                        class="w-full h-40 bg-black/30 rounded-xl p-4 text-white placeholder-gray-500 border border-white/10 focus:border-purple-500 focus:outline-none resize-none"
+                        placeholder="e.g., Today I spent 20dh on taxi, 45dh on lunch, and 100dh on phone bill&#10;&#10;Or: khlsst 50dh f taxi w 30dh f sandwich w 100dh f telephone"
+                    ></textarea>
+
+                    <button onclick="extractMulti()" class="mt-6 w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 font-semibold hover:opacity-90 transition-all flex items-center justify-center gap-2">
+                        <i class="fas fa-layer-group"></i>
+                        Extract All Expenses
+                    </button>
+                </div>
+
+                <!-- OCR -->
+                <div id="panel-ocr" class="panel hidden">
+                    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <i class="fas fa-image text-green-400"></i>
+                        Receipt / Invoice OCR
+                    </h2>
+                    
+                    <div class="border-2 border-dashed border-white/20 rounded-xl p-8 text-center hover:border-green-500/50 transition-all cursor-pointer" onclick="document.getElementById('file-input').click()">
+                        <input type="file" id="file-input" class="hidden" accept="image/*" onchange="handleFileSelect(event)">
+                        <div id="upload-area">
+                            <i class="fas fa-cloud-upload-alt text-4xl text-gray-500 mb-3"></i>
+                            <p class="text-gray-400">Click to upload or drag & drop</p>
+                            <p class="text-xs text-gray-500 mt-1">JPEG, PNG, WebP, GIF</p>
+                        </div>
+                        <div id="preview-area" class="hidden">
+                            <img id="preview-image" class="max-h-48 mx-auto rounded-lg">
+                            <p id="file-name" class="text-sm text-gray-400 mt-2"></p>
+                        </div>
+                    </div>
+
+                    <div class="mt-4">
+                        <label class="text-sm text-gray-400 mb-1 block">Or enter image URL</label>
+                        <input type="url" id="image-url" class="w-full bg-black/30 rounded-lg p-2.5 border border-white/10 focus:outline-none" placeholder="https://example.com/receipt.jpg">
+                    </div>
+
+                    <button onclick="extractOCR()" class="mt-6 w-full py-3 rounded-xl bg-gradient-to-r from-green-600 to-teal-600 font-semibold hover:opacity-90 transition-all flex items-center justify-center gap-2">
+                        <i class="fas fa-camera"></i>
+                        Process Receipt
+                    </button>
+                </div>
+
+                <!-- Analytics -->
+                <div id="panel-analytics" class="panel hidden">
+                    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <i class="fas fa-chart-bar text-orange-400"></i>
+                        Expense Analytics
+                    </h2>
+                    
+                    <div class="text-sm text-gray-400 mb-4">
+                        <p>Paste your expenses JSON array or use extracted expenses from other tabs.</p>
+                    </div>
+                    
+                    <textarea 
+                        id="analytics-data" 
+                        class="w-full h-40 bg-black/30 rounded-xl p-4 text-white placeholder-gray-500 border border-white/10 focus:border-orange-500 focus:outline-none resize-none font-mono text-sm"
+                        placeholder='[
+  {"amount": 50, "currency": "MAD", "category": "transport"},
+  {"amount": 30, "currency": "MAD", "category": "food"}
+]'
+                    ></textarea>
+
+                    <button onclick="analyzeExpenses()" class="mt-6 w-full py-3 rounded-xl bg-gradient-to-r from-orange-600 to-red-600 font-semibold hover:opacity-90 transition-all flex items-center justify-center gap-2">
+                        <i class="fas fa-chart-pie"></i>
+                        Analyze
+                    </button>
+                </div>
+
+                <!-- Example Texts -->
+                <div class="mt-6 pt-6 border-t border-white/10">
+                    <p class="text-sm text-gray-500 mb-3">Try these examples:</p>
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="setExample('I paid 150dh for taxi to airport')" class="text-xs px-3 py-1.5 rounded-full glass hover:bg-white/10">🚕 Taxi</button>
+                        <button onclick="setExample('khlsst 45dh f lunch w 20dh f coffee')" class="text-xs px-3 py-1.5 rounded-full glass hover:bg-white/10">🇲🇦 Darija</button>
+                        <button onclick="setExample('J\\'ai payé 200dh pour le dîner au restaurant')" class="text-xs px-3 py-1.5 rounded-full glass hover:bg-white/10">🇫🇷 French</button>
+                        <button onclick="setExample('Ich habe 50€ für das Mittagessen bezahlt')" class="text-xs px-3 py-1.5 rounded-full glass hover:bg-white/10">🇩🇪 Deutsch</button>
+                        <button onclick="setExample('دفعت 80 درهم للبنزين')" class="text-xs px-3 py-1.5 rounded-full glass hover:bg-white/10">🇸🇦 Arabic</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results Panel -->
+            <div class="glass rounded-2xl p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-semibold flex items-center gap-2">
+                        <i class="fas fa-sparkles text-yellow-400"></i>
+                        Results
+                    </h2>
+                    <div class="flex gap-2">
+                        <button onclick="copyResults()" id="copy-btn" class="hidden text-sm px-3 py-1.5 rounded-lg glass hover:bg-white/10">
+                            <i class="fas fa-copy mr-1"></i>Copy
+                        </button>
+                        <button onclick="exportExcel()" id="export-btn" class="hidden text-sm px-3 py-1.5 rounded-lg glass hover:bg-white/10">
+                            <i class="fas fa-file-excel mr-1"></i>Excel
+                        </button>
+                    </div>
+                </div>
+
+                <div id="results-area" class="min-h-[300px]">
+                    <div id="empty-state" class="flex flex-col items-center justify-center h-[300px] text-gray-500">
+                        <i class="fas fa-inbox text-4xl mb-3"></i>
+                        <p>Results will appear here</p>
+                    </div>
+                    
+                    <div id="loading-state" class="hidden flex flex-col items-center justify-center h-[300px]">
+                        <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                        <p class="text-gray-400 loading">Processing with AI...</p>
+                    </div>
+
+                    <div id="results-content" class="hidden space-y-4"></div>
+                    
+                    <div id="analytics-content" class="hidden"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stored Expenses -->
+        <div class="mt-8 glass rounded-2xl p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-lg font-semibold flex items-center gap-2">
+                    <i class="fas fa-database text-cyan-400"></i>
+                    Session Expenses
+                    <span id="expense-count" class="text-sm font-normal text-gray-400">(0 items)</span>
+                </h2>
+                <div class="flex gap-2">
+                    <button onclick="clearExpenses()" class="text-sm px-3 py-1.5 rounded-lg glass hover:bg-red-500/20 text-red-400">
+                        <i class="fas fa-trash mr-1"></i>Clear All
+                    </button>
+                    <button onclick="analyzeStored()" class="text-sm px-3 py-1.5 rounded-lg glass hover:bg-white/10">
+                        <i class="fas fa-chart-pie mr-1"></i>Analyze
+                    </button>
+                    <button onclick="exportStoredExcel()" class="text-sm px-3 py-1.5 rounded-lg glass hover:bg-white/10">
+                        <i class="fas fa-download mr-1"></i>Export
+                    </button>
+                </div>
+            </div>
+            <div id="stored-expenses" class="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div class="text-gray-500 text-sm col-span-full text-center py-8">
+                    <i class="fas fa-coins text-2xl mb-2 block"></i>
+                    No expenses stored yet. Extract some expenses to see them here.
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let storedExpenses = [];
+        let currentTab = 'extract';
+        let selectedFile = null;
+
+        // Tab switching
+        function switchTab(tab) {
+            document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
+            document.querySelectorAll('[id^="tab-"]').forEach(t => {
+                t.classList.remove('tab-active');
+                t.classList.add('glass');
+            });
+            
+            document.getElementById(`panel-${tab}`).classList.remove('hidden');
+            document.getElementById(`tab-${tab}`).classList.add('tab-active');
+            document.getElementById(`tab-${tab}`).classList.remove('glass');
+            currentTab = tab;
+        }
+
+        // Set example text
+        function setExample(text) {
+            if (currentTab === 'extract') {
+                document.getElementById('input-text').value = text;
+            } else if (currentTab === 'multi') {
+                document.getElementById('multi-text').value = text;
+            }
+        }
+
+        // Show loading
+        function showLoading() {
+            document.getElementById('empty-state').classList.add('hidden');
+            document.getElementById('loading-state').classList.remove('hidden');
+            document.getElementById('results-content').classList.add('hidden');
+            document.getElementById('analytics-content').classList.add('hidden');
+        }
+
+        // Show results
+        function showResults(html) {
+            document.getElementById('empty-state').classList.add('hidden');
+            document.getElementById('loading-state').classList.add('hidden');
+            document.getElementById('results-content').innerHTML = html;
+            document.getElementById('results-content').classList.remove('hidden');
+            document.getElementById('analytics-content').classList.add('hidden');
+            document.getElementById('copy-btn').classList.remove('hidden');
+            document.getElementById('export-btn').classList.remove('hidden');
+        }
+
+        // Show analytics
+        function showAnalytics(html) {
+            document.getElementById('empty-state').classList.add('hidden');
+            document.getElementById('loading-state').classList.add('hidden');
+            document.getElementById('results-content').classList.add('hidden');
+            document.getElementById('analytics-content').innerHTML = html;
+            document.getElementById('analytics-content').classList.remove('hidden');
+        }
+
+        // Show error
+        function showError(message) {
+            document.getElementById('empty-state').classList.add('hidden');
+            document.getElementById('loading-state').classList.add('hidden');
+            document.getElementById('results-content').innerHTML = `
+                <div class="bg-red-500/20 border border-red-500/50 rounded-xl p-4">
+                    <div class="flex items-center gap-2 text-red-400">
+                        <i class="fas fa-exclamation-circle"></i>
+                        <span class="font-semibold">Error</span>
+                    </div>
+                    <p class="mt-2 text-sm text-gray-300">${message}</p>
+                </div>
+            `;
+            document.getElementById('results-content').classList.remove('hidden');
+        }
+
+        // Format expense card
+        function formatExpenseCard(expense, index = null) {
+            const categoryIcons = {
+                transport: '🚕', food: '🍔', utilities: '💡', rent: '🏠',
+                entertainment: '🎬', shopping: '🛍️', health: '💊',
+                education: '📚', travel: '✈️', other: '📦'
+            };
+            const icon = categoryIcons[expense.category] || '📦';
+            
+            return `
+                <div class="expense-card glass-darker rounded-xl p-4">
+                    <div class="flex items-start justify-between">
+                        <div class="flex items-center gap-3">
+                            <span class="text-2xl">${icon}</span>
+                            <div>
+                                <p class="font-semibold">${expense.description || expense.category || 'Expense'}</p>
+                                <p class="text-sm text-gray-400">${expense.category || 'uncategorized'}</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-xl font-bold text-green-400">${expense.amount || 0} ${expense.currency || 'MAD'}</p>
+                            <p class="text-xs text-gray-500">${expense.date || 'Today'}</p>
+                        </div>
+                    </div>
+                    ${expense.payment_method ? `<p class="mt-2 text-xs text-gray-500"><i class="fas fa-credit-card mr-1"></i>${expense.payment_method}</p>` : ''}
+                </div>
+            `;
+        }
+
+        // Add to stored expenses
+        function addToStored(expenses) {
+            if (Array.isArray(expenses)) {
+                storedExpenses.push(...expenses);
+            } else {
+                storedExpenses.push(expenses);
+            }
+            updateStoredDisplay();
+        }
+
+        // Update stored expenses display
+        function updateStoredDisplay() {
+            const container = document.getElementById('stored-expenses');
+            const count = document.getElementById('expense-count');
+            count.textContent = `(${storedExpenses.length} items)`;
+            
+            if (storedExpenses.length === 0) {
+                container.innerHTML = `
+                    <div class="text-gray-500 text-sm col-span-full text-center py-8">
+                        <i class="fas fa-coins text-2xl mb-2 block"></i>
+                        No expenses stored yet. Extract some expenses to see them here.
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = storedExpenses.map((exp, i) => `
+                <div class="glass-darker rounded-lg p-3 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <span>${exp.category === 'transport' ? '🚕' : exp.category === 'food' ? '🍔' : '📦'}</span>
+                        <div>
+                            <p class="text-sm font-medium">${exp.description || exp.category || 'Expense'}</p>
+                            <p class="text-xs text-gray-500">${exp.date || 'Today'}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-green-400 font-semibold">${exp.amount} ${exp.currency || 'MAD'}</span>
+                        <button onclick="removeExpense(${i})" class="text-gray-500 hover:text-red-400">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function removeExpense(index) {
+            storedExpenses.splice(index, 1);
+            updateStoredDisplay();
+        }
+
+        function clearExpenses() {
+            if (confirm('Clear all stored expenses?')) {
+                storedExpenses = [];
+                updateStoredDisplay();
+            }
+        }
+
+        // Extract single expense
+        async function extractSingle() {
+            const text = document.getElementById('input-text').value.trim();
+            if (!text) return alert('Please enter expense description');
+            
+            const expenseType = document.getElementById('expense-type').value;
+            const language = document.getElementById('language').value;
+            
+            showLoading();
+            
+            try {
+                const response = await fetch('/expenses/extract', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text,
+                        expense_type: expenseType || null,
+                        language: language || null
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) throw new Error(data.detail || 'Extraction failed');
+                
+                const html = `
+                    <div class="mb-4 flex items-center gap-2 text-sm text-gray-400">
+                        <i class="fas fa-language"></i>
+                        Detected: <span class="text-blue-400">${data.language_detected || 'Unknown'}</span>
+                    </div>
+                    ${formatExpenseCard(data.data)}
+                `;
+                showResults(html);
+                addToStored(data.data);
+                
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+
+        // Extract multiple expenses
+        async function extractMulti() {
+            const text = document.getElementById('multi-text').value.trim();
+            if (!text) return alert('Please enter expense description');
+            
+            showLoading();
+            
+            try {
+                const response = await fetch('/expenses/extract/multi', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) throw new Error(data.detail || 'Extraction failed');
+                
+                const html = `
+                    <div class="mb-4 flex items-center justify-between">
+                        <div class="flex items-center gap-2 text-sm text-gray-400">
+                            <i class="fas fa-language"></i>
+                            Detected: <span class="text-purple-400">${data.language_detected || 'Unknown'}</span>
+                        </div>
+                        <span class="px-2 py-1 rounded-full bg-purple-500/20 text-purple-400 text-sm">
+                            ${data.count} expenses found
+                        </span>
+                    </div>
+                    <div class="space-y-3">
+                        ${data.expenses.map(exp => formatExpenseCard(exp)).join('')}
+                    </div>
+                `;
+                showResults(html);
+                addToStored(data.expenses);
+                
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+
+        // Handle file selection
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                selectedFile = file;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    document.getElementById('preview-image').src = e.target.result;
+                    document.getElementById('file-name').textContent = file.name;
+                    document.getElementById('upload-area').classList.add('hidden');
+                    document.getElementById('preview-area').classList.remove('hidden');
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        // Extract from OCR
+        async function extractOCR() {
+            const imageUrl = document.getElementById('image-url').value.trim();
+            
+            showLoading();
+            
+            try {
+                let response, data;
+                
+                if (selectedFile) {
+                    const formData = new FormData();
+                    formData.append('file', selectedFile);
+                    
+                    response = await fetch('/expenses/ocr/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+                } else if (imageUrl) {
+                    response = await fetch(`/expenses/ocr/url?image_url=${encodeURIComponent(imageUrl)}`, {
+                        method: 'POST'
+                    });
+                } else {
+                    throw new Error('Please upload an image or enter an image URL');
+                }
+                
+                data = await response.json();
+                
+                if (!response.ok) throw new Error(data.detail || 'OCR failed');
+                
+                const html = `
+                    <div class="mb-3 flex items-center gap-2">
+                        <span class="px-2 py-1 rounded-full ${data.source === 'webpage' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'} text-xs">
+                            <i class="fas ${data.source === 'webpage' ? 'fa-globe' : 'fa-image'} mr-1"></i>
+                            ${data.source === 'webpage' ? 'Webpage' : data.source === 'image_url' ? 'Image URL' : 'Uploaded Image'}
+                        </span>
+                    </div>
+                    <div class="mb-4">
+                        <div class="flex items-center gap-2 text-sm text-gray-400 mb-2">
+                            <i class="fas fa-file-alt"></i>
+                            Extracted Text:
+                        </div>
+                        <div class="glass-darker rounded-lg p-3 text-sm text-gray-300 max-h-32 overflow-auto">
+                            ${data.extracted_text.replace(/\n/g, '<br>')}
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-sm text-gray-400">Parsed Expenses:</span>
+                        <span class="px-2 py-1 rounded-full bg-green-500/20 text-green-400 text-sm">
+                            ${data.count} found
+                        </span>
+                    </div>
+                    <div class="space-y-3">
+                        ${data.expenses.map(exp => formatExpenseCard(exp)).join('')}
+                    </div>
+                `;
+                showResults(html);
+                addToStored(data.expenses);
+                
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+
+        // Analyze expenses
+        async function analyzeExpenses() {
+            const dataText = document.getElementById('analytics-data').value.trim();
+            
+            let expenses;
+            try {
+                expenses = JSON.parse(dataText);
+            } catch {
+                return alert('Invalid JSON. Please check your input.');
+            }
+            
+            showLoading();
+            
+            try {
+                const response = await fetch('/expenses/analytics', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ expenses, group_by: 'category' })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) throw new Error(data.detail || 'Analysis failed');
+                
+                renderAnalytics(data);
+                
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+
+        // Analyze stored expenses
+        async function analyzeStored() {
+            if (storedExpenses.length === 0) {
+                return alert('No expenses to analyze. Extract some expenses first.');
+            }
+            
+            showLoading();
+            switchTab('analytics');
+            
+            try {
+                const response = await fetch('/expenses/analytics', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ expenses: storedExpenses, group_by: 'category' })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) throw new Error(data.detail || 'Analysis failed');
+                
+                renderAnalytics(data);
+                
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+
+        // Render analytics
+        function renderAnalytics(data) {
+            const categoryColors = {
+                transport: '#3b82f6', food: '#f59e0b', utilities: '#10b981',
+                rent: '#8b5cf6', entertainment: '#ec4899', shopping: '#06b6d4',
+                health: '#ef4444', education: '#6366f1', travel: '#14b8a6', other: '#6b7280'
+            };
+            
+            const breakdown = Object.entries(data.breakdown);
+            const maxAmount = Math.max(...breakdown.map(([_, v]) => v.amount));
+            
+            const html = `
+                <div class="space-y-6">
+                    <!-- Summary Cards -->
+                    <div class="grid grid-cols-3 gap-4">
+                        <div class="glass-darker rounded-xl p-4 text-center">
+                            <p class="text-3xl font-bold text-green-400">${data.total_amount.toFixed(2)}</p>
+                            <p class="text-sm text-gray-400">${data.currency}</p>
+                        </div>
+                        <div class="glass-darker rounded-xl p-4 text-center">
+                            <p class="text-3xl font-bold text-blue-400">${data.count}</p>
+                            <p class="text-sm text-gray-400">Expenses</p>
+                        </div>
+                        <div class="glass-darker rounded-xl p-4 text-center">
+                            <p class="text-3xl font-bold text-purple-400">${(data.total_amount / data.count).toFixed(2)}</p>
+                            <p class="text-sm text-gray-400">Average</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Category Breakdown -->
+                    <div>
+                        <h3 class="text-sm font-semibold text-gray-400 mb-3">By Category</h3>
+                        <div class="space-y-2">
+                            ${breakdown.map(([cat, val]) => `
+                                <div class="flex items-center gap-3">
+                                    <span class="w-24 text-sm capitalize">${cat}</span>
+                                    <div class="flex-1 h-6 bg-black/30 rounded-full overflow-hidden">
+                                        <div class="h-full rounded-full" style="width: ${(val.amount / maxAmount) * 100}%; background: ${categoryColors[cat] || '#6b7280'}"></div>
+                                    </div>
+                                    <span class="w-20 text-right text-sm font-medium">${val.amount.toFixed(2)}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    
+                    <!-- Insights -->
+                    <div>
+                        <h3 class="text-sm font-semibold text-gray-400 mb-3">Insights</h3>
+                        <div class="space-y-2">
+                            ${data.insights.map(insight => `
+                                <div class="flex items-center gap-2 text-sm">
+                                    <i class="fas fa-lightbulb text-yellow-400"></i>
+                                    <span>${insight}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+            showAnalytics(html);
+        }
+
+        // Copy results
+        function copyResults() {
+            const content = document.getElementById('results-content').innerText;
+            navigator.clipboard.writeText(content);
+            alert('Copied to clipboard!');
+        }
+
+        // Export to Excel
+        async function exportExcel() {
+            if (storedExpenses.length === 0) {
+                return alert('No expenses to export');
+            }
+            
+            try {
+                const response = await fetch('/expenses/export/excel?title=My%20Expenses', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(storedExpenses)
+                });
+                
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'expenses.xlsx';
+                a.click();
+            } catch (error) {
+                alert('Export failed: ' + error.message);
+            }
+        }
+
+        // Export stored to Excel
+        async function exportStoredExcel() {
+            await exportExcel();
+        }
+    </script>
+</body>
+</html>
