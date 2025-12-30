@@ -66,6 +66,14 @@ class AnalyticsRequest(BaseModel):
     group_by: Optional[str] = Field("category", description="Group by: category, date, payment_method")
 
 
+class ReceiptParseRequest(BaseModel):
+    """Request for full receipt/invoice parsing"""
+    extract_line_items: bool = Field(True, description="Extract individual line items")
+    extract_vendor: bool = Field(True, description="Extract vendor details")
+    extract_tax: bool = Field(True, description="Extract tax breakdown")
+    language: Optional[str] = Field(None, description="Language hint")
+
+
 # ============================================================
 # RESPONSE MODELS
 # ============================================================
@@ -78,6 +86,70 @@ class ExpenseData(BaseModel):
     description: Optional[str] = None
     date: Optional[str] = None
     payment_method: Optional[str] = None
+
+
+class LineItem(BaseModel):
+    """Single line item from receipt"""
+    description: str
+    quantity: Optional[float] = 1
+    unit_price: Optional[float] = None
+    total: float
+    category: Optional[str] = None
+
+
+class VendorInfo(BaseModel):
+    """Vendor/merchant information"""
+    name: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    tax_id: Optional[str] = None
+    website: Optional[str] = None
+
+
+class TaxBreakdown(BaseModel):
+    """Tax breakdown information"""
+    subtotal: Optional[float] = None
+    tax_rate: Optional[float] = None
+    tax_amount: Optional[float] = None
+    discount: Optional[float] = None
+    total: float
+    currency: str = "MAD"
+
+
+class InvoiceInfo(BaseModel):
+    """Invoice/receipt metadata"""
+    number: Optional[str] = None
+    date: Optional[str] = None
+    due_date: Optional[str] = None
+    type: str = "receipt"  # receipt, invoice, bill
+
+
+class FullReceiptResponse(BaseModel):
+    """Complete receipt/invoice parsing response"""
+    success: bool
+    source: str  # image_upload, pdf_upload, url, text
+    
+    # Invoice metadata
+    invoice: Optional[InvoiceInfo] = None
+    
+    # Vendor info
+    vendor: Optional[VendorInfo] = None
+    
+    # Line items
+    line_items: list[LineItem] = []
+    line_items_count: int = 0
+    
+    # Totals & tax
+    totals: Optional[TaxBreakdown] = None
+    
+    # Payment info
+    payment_method: Optional[str] = None
+    payment_status: Optional[str] = None
+    
+    # Metadata
+    extracted_text: Optional[str] = None
+    language_detected: Optional[str] = None
+    confidence: Optional[float] = None
 
 
 class SingleExpenseResponse(BaseModel):
@@ -119,6 +191,9 @@ class AnalyticsResponse(BaseModel):
 class OCRExpenseResponse(BaseModel):
     """Response for OCR extraction"""
     success: bool
-    extracted_text: str
-    expenses: list[dict]
+    source: Optional[str] = None
+    extracted_text: Optional[str] = None
+    expenses: list[dict] = []
+    count: int = 0
+    language_detected: Optional[str] = None
     confidence: Optional[float] = None

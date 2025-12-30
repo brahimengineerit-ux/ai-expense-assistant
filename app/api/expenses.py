@@ -1,7 +1,7 @@
 """
 Expenses API Router
 ===================
-All expense extraction endpoints.
+All expense extraction endpoints including receipt parsing.
 """
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query
@@ -17,7 +17,8 @@ from app.models.schemas import (
     MultiExpenseResponse,
     BatchExpenseResponse,
     AnalyticsResponse,
-    OCRExpenseResponse
+    OCRExpenseResponse,
+    FullReceiptResponse
 )
 from app.services.extractor import (
     extract_single_expense,
@@ -25,6 +26,16 @@ from app.services.extractor import (
     extract_batch
 )
 from app.services.ocr import process_receipt, process_receipt_from_url
+from app.services.receipt_parser import (
+    parse_receipt_full,
+    parse_receipt_from_image,
+    parse_receipt_from_url as parse_receipt_url
+)
+from app.services.pdf_processor import (
+    extract_text_from_pdf,
+    pdf_page_to_image,
+    get_pdf_info
+)
 from app.services.analytics import analyze_expenses, generate_summary, detect_anomalies
 from app.services.export import export_to_csv, export_to_excel
 
@@ -40,16 +51,7 @@ def extract_single(request: SingleExpenseRequest):
     """
     Extract a single expense from text.
     
-    Supports multiple languages: English, French, Arabic, Darija.
-    
-    Example:
-    ```json
-    {
-      "text": "I paid 15 dh for a taxi this morning",
-      "expense_type": "transport",
-      "fields": ["amount", "currency", "payment_method", "date"]
-    }
-    ```
+    Supports multiple languages: English, French, German, Arabic, Darija.
     """
     try:
         result = extract_single_expense(
@@ -67,22 +69,6 @@ def extract_single(request: SingleExpenseRequest):
 def extract_multi(request: MultiExpenseRequest):
     """
     Extract multiple expenses from a single text.
-    
-    Example:
-    ```json
-    {
-      "text": "Today I spent 20dh on taxi, 45dh on lunch, and 100dh on phone bill",
-      "fields": ["amount", "currency", "category", "description"]
-    }
-    ```
-    
-    Or in Darija:
-    ```json
-    {
-      "text": "khlsst 50dh f taxi w 30dh f sandwich",
-      "fields": ["amount", "currency", "category"]
-    }
-    ```
     """
     try:
         result = extract_multiple_expenses(
@@ -99,18 +85,6 @@ def extract_multi(request: MultiExpenseRequest):
 def extract_batch_endpoint(request: BatchExpenseRequest):
     """
     Process multiple expense texts in batch.
-    
-    Example:
-    ```json
-    {
-      "texts": [
-        "Taxi to airport 150dh",
-        "Coffee at Starbucks 45dh",
-        "Monthly Netflix subscription 50dh"
-      ],
-      "fields": ["amount", "currency", "category", "description"]
-    }
-    ```
     """
     try:
         result = extract_batch(
@@ -139,7 +113,6 @@ async def ocr_upload(
     
     Supports: JPEG, PNG, WebP, GIF
     """
-    # Validate file type
     allowed_types = ["image/jpeg", "image/png", "image/webp", "image/gif"]
     if file.content_type not in allowed_types:
         raise HTTPException(
@@ -184,6 +157,225 @@ def ocr_from_url(
 
 
 # ============================================================
+# RECEIPT PARSER ENDPOINTS (NEW)
+# ============================================================
+
+@router.post("/receipt/parse/text", response_model=FullReceiptResponse)
+def parse_receipt_text(
+    text: str,
+    extract_line_items: bool = Query(True, description="Extract individual line items"),
+    extract_vendor: bool = Query(True, description="Extract vendor details"),
+    extract_tax: bool = Query(True, description="Extract tax breakdown")
+):
+    """
+    🧾 Parse receipt/invoice from text.
+    
+    Extracts:
+    - Vendor info (name, address, phone, tax ID)
+    - Invoice details (number, date, type)
+    - Line items (products with qty, price, total)
+    - Tax breakdown (subtotal, tax rate, tax amount, total)
+    - Payment info (method, status)
+    """
+    try:
+        result = parse_receipt_full(
+            text=text,
+            extract_line_items=extract_line_items,
+            extract_vendor=extract_vendor,
+            extract_tax=extract_tax
+        )
+        
+        return FullReceiptResponse(
+            success=True,
+            source="text",
+            invoice=result.get("invoice"),
+            vendor=result.get("vendor"),
+            line_items=result.get("line_items", []),
+            line_items_count=len(result.get("line_items", [])),
+            totals=result.get("totals"),
+            payment_method=result.get("payment", {}).get("method"),
+            payment_status=result.get("payment", {}).get("status"),
+            language_detected=result.get("language_detected")
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/receipt/parse/upload", response_model=FullReceiptResponse)
+async def parse_receipt_upload(
+    file: UploadFile = File(..., description="Receipt/invoice image or PDF"),
+    extract_line_items: bool = Query(True, description="Extract line items"),
+    extract_vendor: bool = Query(True, description="Extract vendor details"),
+    extract_tax: bool = Query(True, description="Extract tax breakdown")
+):
+    """
+    🧾 Parse receipt/invoice from uploaded image or PDF.
+    
+    Supports: JPEG, PNG, WebP, GIF, PDF
+    
+    Returns full structured data including:
+    - Vendor info
+    - Line items (each product)
+    - Tax breakdown
+    - Invoice number
+    - Payment status
+    """
+    allowed_image_types = ["image/jpeg", "image/png", "image/webp", "image/gif"]
+    allowed_pdf_types = ["application/pdf"]
+    
+    file_bytes = await file.read()
+    
+    try:
+        # Handle PDF
+        if file.content_type in allowed_pdf_types:
+            # Get PDF info
+            pdf_info = get_pdf_info(file_bytes)
+            
+            # Try text extraction first
+            extracted_text = extract_text_from_pdf(file_bytes)
+            
+            if extracted_text.strip() and len(extracted_text) > 50:
+                # PDF has text, use text parsing
+                result = parse_receipt_full(
+                    text=extracted_text,
+                    extract_line_items=extract_line_items,
+                    extract_vendor=extract_vendor,
+                    extract_tax=extract_tax
+                )
+                source = "pdf_text"
+            else:
+                # PDF is scanned, convert to image and use OCR
+                image_bytes = pdf_page_to_image(file_bytes, page_num=0, dpi=200)
+                result = parse_receipt_from_image(
+                    image_bytes=image_bytes,
+                    mime_type="image/png",
+                    extract_line_items=extract_line_items,
+                    extract_vendor=extract_vendor,
+                    extract_tax=extract_tax
+                )
+                source = "pdf_ocr"
+                extracted_text = result.get("extracted_text", "")
+        
+        # Handle images
+        elif file.content_type in allowed_image_types:
+            result = parse_receipt_from_image(
+                image_bytes=file_bytes,
+                mime_type=file.content_type,
+                extract_line_items=extract_line_items,
+                extract_vendor=extract_vendor,
+                extract_tax=extract_tax
+            )
+            source = "image_upload"
+            extracted_text = result.get("extracted_text", "")
+        
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type: {file.content_type}. Allowed: images (JPEG, PNG, WebP, GIF) and PDF"
+            )
+        
+        return FullReceiptResponse(
+            success=True,
+            source=source,
+            invoice=result.get("invoice"),
+            vendor=result.get("vendor"),
+            line_items=result.get("line_items", []),
+            line_items_count=len(result.get("line_items", [])),
+            totals=result.get("totals"),
+            payment_method=result.get("payment", {}).get("method"),
+            payment_status=result.get("payment", {}).get("status"),
+            extracted_text=extracted_text[:2000] if extracted_text else None,
+            language_detected=result.get("language_detected"),
+            confidence=result.get("confidence")
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/receipt/parse/url", response_model=FullReceiptResponse)
+def parse_receipt_from_image_url(
+    image_url: str,
+    extract_line_items: bool = Query(True, description="Extract line items"),
+    extract_vendor: bool = Query(True, description="Extract vendor details"),
+    extract_tax: bool = Query(True, description="Extract tax breakdown")
+):
+    """
+    🧾 Parse receipt/invoice from image URL.
+    """
+    try:
+        result = parse_receipt_url(
+            image_url=image_url,
+            extract_line_items=extract_line_items,
+            extract_vendor=extract_vendor,
+            extract_tax=extract_tax
+        )
+        
+        return FullReceiptResponse(
+            success=True,
+            source="image_url",
+            invoice=result.get("invoice"),
+            vendor=result.get("vendor"),
+            line_items=result.get("line_items", []),
+            line_items_count=len(result.get("line_items", [])),
+            totals=result.get("totals"),
+            payment_method=result.get("payment", {}).get("method"),
+            payment_status=result.get("payment", {}).get("status"),
+            extracted_text=result.get("extracted_text"),
+            language_detected=result.get("language_detected"),
+            confidence=result.get("confidence")
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================
+# PDF ENDPOINTS (NEW)
+# ============================================================
+
+@router.post("/pdf/info")
+async def get_pdf_information(
+    file: UploadFile = File(..., description="PDF file")
+):
+    """
+    📄 Get PDF information (page count, metadata, has text/images).
+    """
+    if file.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="File must be a PDF")
+    
+    try:
+        pdf_bytes = await file.read()
+        info = get_pdf_info(pdf_bytes)
+        return {"success": True, **info}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/pdf/extract-text")
+async def extract_pdf_text(
+    file: UploadFile = File(..., description="PDF file")
+):
+    """
+    📄 Extract text from PDF.
+    """
+    if file.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="File must be a PDF")
+    
+    try:
+        pdf_bytes = await file.read()
+        text = extract_text_from_pdf(pdf_bytes)
+        return {
+            "success": True,
+            "text": text,
+            "char_count": len(text)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================
 # ANALYTICS ENDPOINTS
 # ============================================================
 
@@ -191,18 +383,6 @@ def ocr_from_url(
 def get_analytics(request: AnalyticsRequest):
     """
     Analyze expenses and get insights.
-    
-    Example:
-    ```json
-    {
-      "expenses": [
-        {"amount": 20, "currency": "MAD", "category": "transport"},
-        {"amount": 45, "currency": "MAD", "category": "food"},
-        {"amount": 100, "currency": "MAD", "category": "utilities"}
-      ],
-      "group_by": "category"
-    }
-    ```
     """
     try:
         result = analyze_expenses(
